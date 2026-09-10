@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "creaturesofwesteros",
+	"version": "${version}",
+	"name": "Creatures of Westeros",
+	"description": "Adds creatures (starting with dragons) to the Westercraft server.",
+	"authors": [
+		"Ezaan"
+	],
+	"license": "CC0-1.0",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"dev.westercraft.creatures.CreaturesOfWesterosMod"
+		],
+		"client": [
+			"dev.westercraft.creatures.client.CreaturesOfWesterosClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~1.20.1",
+		"java": ">=17",
+		"fabric-api": "*",
+		"geckolib": "*"
+	},
+	"mixins": [
+		"creaturesofwesteros.mixins.json"
+	]
+}

@@ -1,0 +1,10 @@
+{
+	"entity.creaturesofwesteros.dragon": "Dragon",
+	"entity.creaturesofwesteros.viserion": "Viserion",
+	"entity.creaturesofwesteros.direwolf": "Direwolf",
+	"item.creaturesofwesteros.direwolf_bone": "Direwolf Bone",
+	"key.categories.creaturesofwesteros": "Creatures of Westeros",
+	"key.creaturesofwesteros.direwolf_ability": "Direwolf Lunge (while mounted)",
+	"key.creaturesofwesteros.dracarys": "Dracarys (while mounted)",
+	"key.creaturesofwesteros.ground_mode": "Toggle Flight/Ground Mode (while mounted, near ground)"
+}

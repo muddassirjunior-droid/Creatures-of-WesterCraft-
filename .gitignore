@@ -1,0 +1,27 @@
+# gradle
+.gradle/
+build/
+out/
+
+# eclipse
+*.launch
+
+# idea
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# vscode
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.classpath
+.project
+bin/
+
+# macOS
+*.DS_Store
+
+# fabric
+run/

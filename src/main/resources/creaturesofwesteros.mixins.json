@@ -1,0 +1,17 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "dev.westercraft.creatures.mixin",
+	"compatibilityLevel": "JAVA_17",
+	"mixins": [
+		"LivingEntityAccessor",
+		"PlayerDismountMixin"
+	],
+	"client": [
+		"CameraMixin",
+		"InGameHudCrosshairMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
