@@ -2,12 +2,12 @@
 	"schemaVersion": 1,
 	"id": "creaturesofwesteros",
 	"version": "${version}",
-	"name": "Creatures of Westeros",
+	"name": "Creatures of Westercraft",
 	"description": "Adds creatures (starting with dragons) to the Westercraft server.",
 	"authors": [
 		"Ezaan"
 	],
-	"license": "CC0-1.0",
+	"license": "All-Rights-Reserved",
 	"environment": "*",
 	"entrypoints": {
 		"main": [

@@ -10,6 +10,45 @@ base {
 	archivesName = project.archives_base_name
 }
 
+// Claude testing harness: dedicated GameTest source set (src/gametest/java),
+// isolated from the main mod jar -- its fabric.mod.json (declaring the
+// "fabric-gametest" entrypoint) is only ever on the classpath for the
+// "gametest" run below, never for runClient/runServer/production builds.
+sourceSets {
+	gametest {
+		java {
+			srcDirs = ['src/gametest/java']
+		}
+		resources {
+			srcDirs = ['src/gametest/resources']
+		}
+		compileClasspath += sourceSets.main.compileClasspath
+		runtimeClasspath += sourceSets.main.runtimeClasspath
+	}
+}
+
+// Claude testing harness: launch_minecraft.py --world "Name" sets this env var so
+// the harness can auto-enter a singleplayer world instead of stopping at the main
+// menu. A no-op (default vanilla behavior) whenever the env var isn't set.
+tasks.named("runClient") {
+	def quickplayWorld = System.getenv("CLAUDE_MC_QUICKPLAY_WORLD")
+	if (quickplayWorld) {
+		args("--quickPlaySingleplayer", quickplayWorld)
+	}
+}
+
+loom {
+	runs {
+		gametest {
+			inherit server
+			name "Game Test"
+			vmArg "-Dfabric-api.gametest"
+			vmArg "-Dfabric-api.gametest.report-file=${file("$buildDir/junit.xml")}"
+			source sourceSets.gametest
+		}
+	}
+}
+
 repositories {
 	maven {
 		name = 'GeckoLib'
@@ -29,6 +68,8 @@ dependencies {
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
 	modImplementation "software.bernie.geckolib:geckolib-fabric-${project.minecraft_version}:${project.geckolib_version}"
+
+	gametestImplementation sourceSets.main.output
 }
 
 processResources {

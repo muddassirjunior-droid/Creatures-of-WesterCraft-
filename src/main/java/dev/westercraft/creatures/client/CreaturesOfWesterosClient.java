@@ -6,18 +6,21 @@ import dev.westercraft.creatures.entity.ModEntities;
 import dev.westercraft.creatures.entity.ViserionEntity;
 import dev.westercraft.creatures.entity.client.DirewolfRenderer;
 import dev.westercraft.creatures.entity.client.DragonRenderer;
+import dev.westercraft.creatures.entity.client.ViserionFireballModel;
 import dev.westercraft.creatures.entity.client.ViserionFireballRenderer;
+import dev.westercraft.creatures.entity.client.ViserionFireZoneRenderer;
 import dev.westercraft.creatures.entity.client.ViserionPartRenderer;
 import dev.westercraft.creatures.entity.client.ViserionRenderer;
+import dev.westercraft.creatures.entity.client.WyvernRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.network.PacketByteBuf;
 import org.lwjgl.glfw.GLFW;
 
 public class CreaturesOfWesterosClient implements ClientModInitializer {
@@ -28,14 +31,6 @@ public class CreaturesOfWesterosClient implements ClientModInitializer {
 			InputUtil.Type.KEYSYM,
 			GLFW.GLFW_KEY_UNKNOWN,
 			"key.categories.creaturesofwesteros");
-	// Dracarys moved off right-click (useKey) onto its own dedicated key so right-click could
-	// become the tail attack trigger instead - bound to G by default, not left unbound, per
-	// explicit request.
-	private static final KeyBinding DRACARYS_KEY = new KeyBinding(
-			"key.creaturesofwesteros.dracarys",
-			InputUtil.Type.KEYSYM,
-			GLFW.GLFW_KEY_G,
-			"key.categories.creaturesofwesteros");
 	// Manual override on top of the automatic flying/landed state (see ViserionEntity#travel) -
 	// grounded instantly takes off, flying instantly commits to landing if actually close to the
 	// ground. Not a custom entity key like the others above, so plain wasPressed() is safe here
@@ -45,13 +40,12 @@ public class CreaturesOfWesterosClient implements ClientModInitializer {
 			InputUtil.Type.KEYSYM,
 			GLFW.GLFW_KEY_V,
 			"key.categories.creaturesofwesteros");
-	// Tracked manually — KeyBinding has wasPressed() (edge on press) but nothing for release,
-	// and Dracarys now needs both edges: press starts the charge windup, release fires it.
-	private boolean dracarysHeldLastTick = false;
-	// Same isPressed()+edge-tracking technique as attackKey below, not useKey.wasPressed() -
-	// useKey drives vanilla's own item-use handling (eating, drawing bow, blocking) the same way
-	// attackKey drives mining/attacking, so it's exposed to the identical wasPressed()-drained-
-	// before-we-see-it race already confirmed for attackKey.
+	// Dracarys is on right-click (useKey) now, not a dedicated key - fires instantly on press, no
+	// charge-up (see ViserionEntity#fireDracarysNow). Still needs manual isPressed()+edge-tracking
+	// rather than useKey.wasPressed(), for the same reason as attackKey below: useKey drives
+	// vanilla's own item-use handling (eating, drawing bow, blocking) the same way attackKey
+	// drives mining/attacking, so it's exposed to the identical wasPressed()-drained-before-we-
+	// see-it race already confirmed for attackKey.
 	private boolean useHeldLastTick = false;
 	// attackKey specifically can't use wasPressed() here (confirmed via decompile, not a guess):
 	// MinecraftClient.handleInputEvents() drains it itself every tick with a
@@ -62,17 +56,24 @@ public class CreaturesOfWesterosClient implements ClientModInitializer {
 	// held-state, not a consumable counter) plus our own last-tick edge tracking sidesteps the
 	// race entirely - same technique already used for Dracarys above.
 	private boolean attackHeldLastTick = false;
+	// Tracks whether we were on Viserion LAST tick specifically, so the mount transition itself
+	// can be told apart from an ordinary already-mounted tick - see the fix in the tick callback
+	// below for why that distinction matters.
+	private boolean wasOnViserionLastTick = false;
 
 	@Override
 	public void onInitializeClient() {
+		EntityModelLayerRegistry.registerModelLayer(ViserionFireballModel.LAYER, ViserionFireballModel::getTexturedModelData);
+
 		EntityRendererRegistry.register(ModEntities.DRAGON, DragonRenderer::new);
 		EntityRendererRegistry.register(ModEntities.VISERION, ViserionRenderer::new);
 		EntityRendererRegistry.register(ModEntities.VISERION_PART, ViserionPartRenderer::new);
 		EntityRendererRegistry.register(ModEntities.VISERION_FIREBALL, ViserionFireballRenderer::new);
+		EntityRendererRegistry.register(ModEntities.VISERION_FIRE_ZONE, ViserionFireZoneRenderer::new);
 		EntityRendererRegistry.register(ModEntities.DIREWOLF, DirewolfRenderer::new);
+		EntityRendererRegistry.register(ModEntities.WYVERN, WyvernRenderer::new);
 
 		KeyBindingHelper.registerKeyBinding(DIREWOLF_ABILITY_KEY);
-		KeyBindingHelper.registerKeyBinding(DRACARYS_KEY);
 		KeyBindingHelper.registerKeyBinding(GROUND_MODE_KEY);
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -83,33 +84,49 @@ public class CreaturesOfWesterosClient implements ClientModInitializer {
 			boolean attackJustPressed = attackPressed && !this.attackHeldLastTick;
 			this.attackHeldLastTick = attackPressed;
 			boolean usePressed = client.options.useKey.isPressed();
-			boolean useJustPressed = usePressed && !this.useHeldLastTick;
-			this.useHeldLastTick = usePressed;
 
-			if (client.player.getVehicle() instanceof ViserionEntity viserion
-					&& viserion.getControllingPassenger() == client.player) {
-				boolean held = DRACARYS_KEY.isPressed();
-				if (held != this.dracarysHeldLastTick) {
-					PacketByteBuf buf = PacketByteBufs.create();
-					buf.writeBoolean(held);
-					ClientPlayNetworking.send(CreaturesOfWesterosMod.VISERION_DRACARYS_CHANNEL, buf);
-					this.dracarysHeldLastTick = held;
+			// Dropped the client-side getControllingPassenger() re-check that used to gate this
+			// block - that reads the BONDED_RIDER data tracker value, which is synced to the
+			// client over its own separate packet from the vehicle-attachment (SetPassengers)
+			// packet that populates getVehicle(). Under real network conditions those two don't
+			// necessarily land the same tick, so a player could already be attached as a
+			// passenger (getVehicle() true) for several seconds before their BONDED_RIDER sync
+			// catches up - exactly matching the reported "can't breathe fire for the first 5-10s
+			// after mounting" bug (right-click was silently not even sending a packet during that
+			// window). getVehicle() alone is populated directly from the same attachment packet,
+			// no extra synced state to wait on. Safe to drop the permission re-check here too -
+			// every receiver below already re-validates viserion.getControllingPassenger() ==
+			// player server-side (authoritative, no sync lag), so this was always a redundant,
+			// lag-prone copy of a check that's already enforced correctly.
+			boolean onViserionNow = client.player.getVehicle() instanceof ViserionEntity;
+			if (onViserionNow) {
+				// Real bug, not guessed: while unmounted, the else branch below forces
+				// useHeldLastTick to false every single tick. The instant you mount, if you're
+				// still physically holding right-click (the same click that just mounted you -
+				// the overwhelmingly common case), the very next check sees
+				// "usePressed && !useHeldLastTick" as true && true, reading the mount-click itself
+				// as a fresh press and firing Dracarys immediately. On the transition tick only
+				// (just mounted, wasn't last tick), absorb the currently-held state as the
+				// baseline first instead of comparing against that stale forced-false value, so
+				// the mounting click can't double as a fire command - an actual release+re-press
+				// is still needed afterward, same as any other tick.
+				if (!this.wasOnViserionLastTick) {
+					this.useHeldLastTick = usePressed;
 				}
+				if (usePressed && !this.useHeldLastTick) {
+					ClientPlayNetworking.send(CreaturesOfWesterosMod.VISERION_DRACARYS_CHANNEL, PacketByteBufs.empty());
+				}
+				this.useHeldLastTick = usePressed;
 				if (attackJustPressed) {
 					ClientPlayNetworking.send(CreaturesOfWesterosMod.VISERION_MELEE_CHANNEL, PacketByteBufs.empty());
-				}
-				if (useJustPressed) {
-					ClientPlayNetworking.send(CreaturesOfWesterosMod.VISERION_TAIL_CHANNEL, PacketByteBufs.empty());
 				}
 				if (GROUND_MODE_KEY.wasPressed()) {
 					ClientPlayNetworking.send(CreaturesOfWesterosMod.VISERION_GROUND_MODE_CHANNEL, PacketByteBufs.empty());
 				}
 			} else {
-				// Not mounted (or dismounted mid-hold) — a release packet couldn't reach the
-				// right entity anyway (getVehicle() would already be wrong/null), so just reset
-				// local state; the server's own charge-timeout safety net covers this case.
-				this.dracarysHeldLastTick = false;
+				this.useHeldLastTick = false;
 			}
+			this.wasOnViserionLastTick = onViserionNow;
 			if (client.player.getVehicle() instanceof DirewolfEntity wolf && wolf.getControllingPassenger() == client.player) {
 				if (attackJustPressed) {
 					ClientPlayNetworking.send(CreaturesOfWesterosMod.DIREWOLF_BITE_CHANNEL, PacketByteBufs.empty());

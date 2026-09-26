@@ -1,14 +1,20 @@
 package dev.westercraft.creatures;
 
+import dev.westercraft.creatures.command.DebugCommands;
 import dev.westercraft.creatures.command.DragonCommands;
+import dev.westercraft.creatures.command.WyvernCommands;
+import dev.westercraft.creatures.debug.DevBridge;
 import dev.westercraft.creatures.entity.DirewolfEntity;
 import dev.westercraft.creatures.entity.ModEntities;
 import dev.westercraft.creatures.entity.ViserionEntity;
 import dev.westercraft.creatures.item.ModItems;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.util.Identifier;
 import org.slf4j.Logger;
@@ -44,7 +50,23 @@ public class CreaturesOfWesterosMod implements ModInitializer {
 		LOGGER.info("Creatures of Westeros initializing");
 		ModEntities.registerModEntities();
 		ModItems.registerModItems();
-		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> DragonCommands.register(dispatcher));
+
+		// Per explicit request - only one Viserion may exist on the server at a time. Fires on
+		// every spawn path uniformly (natural spawn, /summon, or a chunk loading a previously-saved
+		// one back in), see ViserionEntity#enforceSingleton for the actual UUID bookkeeping.
+		ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> ViserionEntity.enforceSingleton(entity));
+		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+			DragonCommands.register(dispatcher);
+			WyvernCommands.register(dispatcher);
+			if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
+				DebugCommands.register(dispatcher);
+			}
+		});
+
+		// DEV-ONLY: localhost debug bridge for the Claude testing harness (claude-testing/).
+		// No-ops entirely outside a development environment -- see DevBridge.start.
+		ServerLifecycleEvents.SERVER_STARTED.register(DevBridge::start);
+		ServerLifecycleEvents.SERVER_STOPPING.register(server -> DevBridge.stop());
 
 		ServerPlayNetworking.registerGlobalReceiver(DIREWOLF_BITE_CHANNEL, (server, player, handler, buf, sender) ->
 				server.execute(() -> {
@@ -98,18 +120,13 @@ public class CreaturesOfWesterosMod implements ModInitializer {
 					}
 				}));
 
-		// Hold-to-charge, release-to-fire — buf carries which edge this is (true = key pressed,
-		// false = key released), see CreaturesOfWesterosClient's manual press/release tracking.
+		// Fires instantly on right-click press, no charge-up (see ViserionEntity#fireDracarysNow) -
+		// the client only sends this on the press edge now, nothing to distinguish here any more.
 		ServerPlayNetworking.registerGlobalReceiver(VISERION_DRACARYS_CHANNEL, (server, player, handler, buf, sender) -> {
-			boolean pressed = buf.readBoolean();
 			server.execute(() -> {
 				if (player.getVehicle() instanceof ViserionEntity viserion
 						&& viserion.getControllingPassenger() == player) {
-					if (pressed) {
-						viserion.startDracarysCharge();
-					} else {
-						viserion.releaseDracarys();
-					}
+					viserion.fireDracarysNow();
 				}
 			});
 		});

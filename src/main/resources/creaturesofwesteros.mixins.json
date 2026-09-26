@@ -5,11 +5,11 @@
 	"compatibilityLevel": "JAVA_17",
 	"mixins": [
 		"LivingEntityAccessor",
-		"PlayerDismountMixin"
+		"PlayerDismountMixin",
+		"VehicleFastMoveMixin"
 	],
 	"client": [
-		"CameraMixin",
-		"InGameHudCrosshairMixin"
+		"CameraMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

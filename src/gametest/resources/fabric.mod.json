@@ -1,0 +1,17 @@
+{
+	"schemaVersion": 1,
+	"id": "creaturesofwesteros-gametest",
+	"version": "1.0.0",
+	"name": "Creatures of Westeros GameTests",
+	"description": "DEV-ONLY game test registrations, only on the classpath for the 'gametest' Gradle run configuration.",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-gametest": [
+			"dev.westercraft.creatures.gametest.CreaturesGameTests"
+		]
+	},
+	"depends": {
+		"creaturesofwesteros": "*",
+		"fabric-gametest-api-v1": "*"
+	}
+}
